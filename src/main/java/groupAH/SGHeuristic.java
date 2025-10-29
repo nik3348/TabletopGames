@@ -5,7 +5,7 @@ import core.components.Counter;
 import core.interfaces.IStateHeuristic;
 import games.sushigo.SGGameState;
 
-public class SushiGoHeuristic implements IStateHeuristic {
+public class SGHeuristic implements IStateHeuristic {
     @Override
     public double evaluateState(AbstractGameState gs, int playerId) {
         SGGameState state = (SGGameState) gs;
@@ -22,9 +22,7 @@ public class SushiGoHeuristic implements IStateHeuristic {
 
         // Relative normalized heuristic mapped to [-1, 1]
         double relative = (playerScore - minScore) / (double)(maxScore - minScore + 1);
-        double heuristic = 2 * relative - 1;
-
-        return heuristic;
+        return 2 * relative - 1;
     }
 
     @Override

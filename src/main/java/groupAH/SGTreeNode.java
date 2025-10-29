@@ -1,5 +1,6 @@
 package groupAH;
 
+import core.AbstractForwardModel;
 import core.AbstractGameState;
 import core.actions.AbstractAction;
 
@@ -8,15 +9,17 @@ import java.util.*;
 /**
  * TreeNode for Monte Carlo Tree Search (MCTS)
  */
-public class TreeNode {
+public class SGTreeNode {
+    protected SGPlayerParams params;
 
     // --- Tree structure ---
-    TreeNode parent;
-    Map<AbstractAction, TreeNode> children = new HashMap<>();
+    SGTreeNode parent;
+    Map<AbstractAction, SGTreeNode> children = new HashMap<>();
 
     // --- Game info ---
     final AbstractGameState state;
     final AbstractAction actionFromParent;
+    final AbstractForwardModel forwardModel;
     final int depth;
 
     // --- MCTS statistics ---
@@ -26,25 +29,23 @@ public class TreeNode {
     // --- Config ---
     static final double EXPLORATION_CONSTANT = Math.sqrt(2);
 
-    public TreeNode(TreeNode parent, AbstractGameState state, AbstractAction actionFromParent) {
+    public SGTreeNode(SGTreeNode parent, AbstractGameState state, AbstractAction actionFromParent, AbstractForwardModel forwardModel) {
         this.parent = parent;
         this.state = state;
         this.actionFromParent = actionFromParent;
-        if (parent != null)
-            this.depth = parent.depth + 1;
-        else
-            this.depth = 0;
+        this.forwardModel = forwardModel;
+
+        if (parent != null) this.depth = parent.depth + 1;
+        else this.depth = 0;
     }
 
     // ------------------------------
     // 1. Selection
     // ------------------------------
-    TreeNode select() {
-        TreeNode node = this;
+    SGTreeNode select() {
+        SGTreeNode node = this;
         while (!node.state.isGameOver() && node.isFullyExpanded()) {
-            node = node.children.values().stream()
-                    .max(Comparator.comparingDouble(n -> n.getUCB1(EXPLORATION_CONSTANT)))
-                    .orElseThrow();
+            node = node.children.values().stream().max(Comparator.comparingDouble(n -> n.getUCB1(EXPLORATION_CONSTANT))).orElseThrow();
         }
         return node;
     }
@@ -52,10 +53,10 @@ public class TreeNode {
     // ------------------------------
     // 2. Expansion
     // ------------------------------
-    TreeNode expand() {
+    SGTreeNode expand() {
         if (state.isGameOver()) return this;
 
-        List<AbstractAction> possibleActions = state.getActions(state.getCurrentPlayer());
+        List<AbstractAction> possibleActions = forwardModel.computeAvailableActions(state, params.actionSpace);
         Set<AbstractAction> triedActions = children.keySet();
 
         // Find untried actions
@@ -73,11 +74,10 @@ public class TreeNode {
 
         // Generate next state
         AbstractGameState nextState = state.copy();
-        nextState.advance(action);
+        this.forwardModel.next(nextState, action);
 
         // Create child node
-        TreeNode child = new TreeNode(this, nextState, action);
-        children.put(action, child);
+        SGTreeNode child = new SGTreeNode(this, nextState, action, this.forwardModel); children.put(action, child);
 
         return child;
     }
@@ -90,10 +90,10 @@ public class TreeNode {
 
         // Rollout until terminal state
         while (!simState.isGameOver()) {
-            List<AbstractAction> actions = simState.getActions(simState.getCurrentPlayer());
+            List<AbstractAction> actions = forwardModel.computeAvailableActions(simState, params.actionSpace);
             if (actions.isEmpty()) break;
             AbstractAction randomAction = actions.get(new Random().nextInt(actions.size()));
-            simState.advance(randomAction);
+            this.forwardModel.next(simState, randomAction);
         }
 
         // Return reward from perspective of root player (index 0)
@@ -104,7 +104,7 @@ public class TreeNode {
     // 4. Backpropagation
     // ------------------------------
     void backpropagate(double reward) {
-        TreeNode node = this;
+        SGTreeNode node = this;
         while (node != null) {
             node.visitCount++;
             node.totalValue += reward;
@@ -123,7 +123,7 @@ public class TreeNode {
     }
 
     boolean isFullyExpanded() {
-        List<AbstractAction> possible = state.getActions(state.getCurrentPlayer());
+        List<AbstractAction> possible = forwardModel.computeAvailableActions(state, params.actionSpace);
         return possible != null && children.size() == possible.size();
     }
 
@@ -131,8 +131,8 @@ public class TreeNode {
     // Helper to run one full MCTS iteration
     // ------------------------------
     public void runIteration() {
-        TreeNode selected = select();
-        TreeNode expanded = selected.expand();
+        SGTreeNode selected = select();
+        SGTreeNode expanded = selected.expand();
         double reward = expanded.simulate();
         expanded.backpropagate(reward);
     }
@@ -141,19 +141,11 @@ public class TreeNode {
     // Get best action after search
     // ------------------------------
     public AbstractAction getBestAction() {
-        return children.entrySet().stream()
-                .max(Comparator.comparingInt(e -> e.getValue().visitCount))
-                .map(Map.Entry::getKey)
-                .orElse(null);
+        return children.entrySet().stream().max(Comparator.comparingInt(e -> e.getValue().visitCount)).map(Map.Entry::getKey).orElse(null);
     }
 
     @Override
     public String toString() {
-        return "TreeNode{" +
-                "depth=" + depth +
-                ", visits=" + visitCount +
-                ", totalValue=" + totalValue +
-                ", children=" + children.size() +
-                '}';
+        return "TreeNode{" + "depth=" + depth + ", visits=" + visitCount + ", totalValue=" + totalValue + ", children=" + children.size() + '}';
     }
 }

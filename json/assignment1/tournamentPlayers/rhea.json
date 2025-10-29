@@ -13,6 +13,6 @@
 	"breakMS" : 0,
     "shiftLeft": true,
     "heuristic" : {
-      "class" : "groupAH.SushiGoHeuristic"
+      "class" : "groupAH.SGHeuristic"
     }
 }
