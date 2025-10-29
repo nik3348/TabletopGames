@@ -1,0 +1,18 @@
+{
+	"class" : "players.rhea.RHEAParams",
+	"horizon": 10,
+	"discountFactor": 0.900,
+	"populationSize": 5,
+	"childCount": 4,
+	"crossoverType": "UNIFORM",
+	"eliteCount": 1,
+	"selectionType" : "TOURNAMENT",
+	"tournamentSize" : 3,
+	"budgetType" : "BUDGET_FM_CALLS",
+	"budget" : 1000,
+	"breakMS" : 0,
+    "shiftLeft": true,
+    "heuristic" : {
+      "class" : "groupAH.SushiGoHeuristic"
+    }
+}
