@@ -1,6 +1,5 @@
 package groupAH;
 
-import core.AbstractForwardModel;
 import core.AbstractGameState;
 import core.actions.AbstractAction;
 
@@ -18,8 +17,7 @@ public class SGTreeNode {
 
     // --- Game info ---
     final AbstractGameState state;
-    final AbstractAction actionFromParent;
-    final AbstractForwardModel forwardModel;
+    final SGPlayer player;
     final int depth;
 
     // --- MCTS statistics ---
@@ -29,11 +27,10 @@ public class SGTreeNode {
     // --- Config ---
     static final double EXPLORATION_CONSTANT = Math.sqrt(2);
 
-    public SGTreeNode(SGTreeNode parent, AbstractGameState state, AbstractAction actionFromParent, AbstractForwardModel forwardModel) {
+    public SGTreeNode(SGTreeNode parent, AbstractGameState state, SGPlayer player) {
         this.parent = parent;
         this.state = state;
-        this.actionFromParent = actionFromParent;
-        this.forwardModel = forwardModel;
+        this.player = player;
 
         if (parent != null) this.depth = parent.depth + 1;
         else this.depth = 0;
@@ -56,7 +53,7 @@ public class SGTreeNode {
     SGTreeNode expand() {
         if (state.isGameOver()) return this;
 
-        List<AbstractAction> possibleActions = forwardModel.computeAvailableActions(state, params.actionSpace);
+        List<AbstractAction> possibleActions = player.getForwardModel().computeAvailableActions(state, params.actionSpace);
         Set<AbstractAction> triedActions = children.keySet();
 
         // Find untried actions
@@ -74,10 +71,10 @@ public class SGTreeNode {
 
         // Generate next state
         AbstractGameState nextState = state.copy();
-        this.forwardModel.next(nextState, action);
+        this.player.getForwardModel().next(nextState, action);
 
         // Create child node
-        SGTreeNode child = new SGTreeNode(this, nextState, action, this.forwardModel); children.put(action, child);
+        SGTreeNode child = new SGTreeNode(this, nextState, this.player); children.put(action, child);
 
         return child;
     }
@@ -90,10 +87,10 @@ public class SGTreeNode {
 
         // Rollout until terminal state
         while (!simState.isGameOver()) {
-            List<AbstractAction> actions = forwardModel.computeAvailableActions(simState, params.actionSpace);
+            List<AbstractAction> actions = player.getForwardModel().computeAvailableActions(simState, params.actionSpace);
             if (actions.isEmpty()) break;
             AbstractAction randomAction = actions.get(new Random().nextInt(actions.size()));
-            this.forwardModel.next(simState, randomAction);
+            this.player.getForwardModel().next(simState, randomAction);
         }
 
         // Return reward from perspective of root player (index 0)
@@ -123,7 +120,7 @@ public class SGTreeNode {
     }
 
     boolean isFullyExpanded() {
-        List<AbstractAction> possible = forwardModel.computeAvailableActions(state, params.actionSpace);
+        List<AbstractAction> possible = player.getForwardModel().computeAvailableActions(state, params.actionSpace);
         return possible != null && children.size() == possible.size();
     }
 
