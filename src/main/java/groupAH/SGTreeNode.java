@@ -51,10 +51,27 @@ public class SGTreeNode {
     private void setState(AbstractGameState newState) {
         this.state = newState;
         if (newState.isNotTerminal()) {
-            for (AbstractAction action : player.getForwardModel().computeAvailableActions(state, player.getParameters().actionSpace)) {
+            for (AbstractAction action : player.getForwardModel().computeAvailableActions(state, params.actionSpace)) {
                 children.put(action, null); // mark a new node to be expanded
             }
         }
+    }
+
+    private List<AbstractAction> getUntriedActions() {
+        return children.keySet().stream().filter(a -> children.get(a) == null).toList();
+    }
+
+    private void advance(AbstractGameState state, AbstractAction action) {
+        player.getForwardModel().next(state, action);
+        root.incrementFMCounter();
+    }
+
+    public void incrementFMCounter() {
+        fmCallsCount++;
+    }
+
+    public void incrementVisitCounter() {
+        visitCount++;
     }
 
     public void mctsSearch() {
@@ -123,22 +140,25 @@ public class SGTreeNode {
         }
     }
 
-    private List<AbstractAction> getUntriedActions() {
-        return children.keySet().stream().filter(a -> children.get(a) == null).toList();
+    private double getUCBValue(SGTreeNode child) {
+        boolean iAmMoving = state.getCurrentPlayer() == player.getPlayerID();
+        double perspective = iAmMoving ? 1.0 : -1.0;
+
+        double exploitation = (child.value / child.visitCount) * perspective;
+        double exploration = Math.sqrt(Math.log(this.visitCount) / child.visitCount);
+        double ucbValue = exploitation + params.explorationParameter * exploration;
+
+        return noise(ucbValue, params.epsilon, random.nextDouble());
     }
 
     public AbstractAction getBestAction() {
-        // After all iterations, choose the move that leads
-        // to the child node with the highest visit count (most robust)
-        // or highest value (best win rate). Visit count is often more stable.
-
         AbstractAction bestAction = null;
         double bestValue = Double.NEGATIVE_INFINITY;
 
         for (Map.Entry<AbstractAction, SGTreeNode> entry : children.entrySet()) {
             SGTreeNode child = entry.getValue();
             if (child != null) {
-                double childValue = child.value / child.visitCount;
+                double childValue = getUCBValue(child);
 
                 // Apply small noise to break ties randomly
                 childValue = noise(childValue, params.epsilon, random.nextDouble());
@@ -157,7 +177,7 @@ public class SGTreeNode {
         return bestAction;
     }
 
-    public SGTreeNode select() {
+    private SGTreeNode select() {
         SGTreeNode bestChild = null;
         double bestValue = Double.NEGATIVE_INFINITY;
 
@@ -168,28 +188,17 @@ public class SGTreeNode {
                 return child;
             }
 
-            double uctValue = getUCBValue(child);
+            double ucbValue = getUCBValue(child);
 
-            if (uctValue > bestValue) {
-                bestValue = uctValue;
+            if (ucbValue > bestValue) {
+                bestValue = ucbValue;
                 bestChild = child;
             }
         }
         return bestChild;
     }
 
-    private double getUCBValue(SGTreeNode child) {
-        boolean iAmMoving = child.state.getCurrentPlayer() == player.getPlayerID();
-        double perspective = iAmMoving ? 1.0 : -1.0;
-
-        double exploitation = (child.value / child.visitCount) * perspective;
-        double exploration = params.explorationParameter * Math.sqrt(Math.log(this.visitCount) / child.visitCount);
-        double uctValue = exploitation + exploration;
-
-        return noise(uctValue, params.epsilon, random.nextDouble());
-    }
-
-    public SGTreeNode expand() {
+    private SGTreeNode expand() {
         List<AbstractAction> untriedMoves = getUntriedActions();
         if (untriedMoves.isEmpty()) {
             return null; // Should not happen if not a terminal node
@@ -208,16 +217,7 @@ public class SGTreeNode {
         return childNode;
     }
 
-    private void advance(AbstractGameState state, AbstractAction action) {
-        player.getForwardModel().next(state, action);
-        root.incrementFMCounter();
-    }
-
-    public void incrementFMCounter() {
-        fmCallsCount++;
-    }
-
-    public double simulate() {
+    private double simulate() {
         int rolloutDepth = 0;
         AbstractGameState currentState = this.state.copy();
 
@@ -233,15 +233,15 @@ public class SGTreeNode {
 
         // Evaluate final state and return normalised score from the perspective of the player
         // whose turn it was at this.state
-        double value = player.getParameters().getStateHeuristic().evaluateState(currentState, player.getPlayerID());
+        double value = params.getStateHeuristic().evaluateState(currentState, player.getPlayerID());
         if (Double.isNaN(value)) throw new AssertionError("Illegal heuristic value - should be a number");
-        return value;
+        return value * Math.pow(params.discountFactor, rolloutDepth) ;
     }
 
-    public void backpropagate(double result) {
+    private void backpropagate(double result) {
         SGTreeNode currentNode = this;
         while (currentNode != null) {
-            currentNode.visitCount++;
+            currentNode.incrementVisitCounter();
             // The result needs to be handled based on whose turn it was.
             // If the parent is for the OTHER player, the result might be negated.
             // For simplicity here, we just add the value.
