@@ -141,10 +141,7 @@ public class SGTreeNode {
     }
 
     private double getUCBValue(SGTreeNode child) {
-        boolean iAmMoving = state.getCurrentPlayer() == player.getPlayerID();
-        double perspective = iAmMoving ? 1.0 : -1.0;
-
-        double exploitation = (child.value / child.visitCount) * perspective;
+        double exploitation = child.value / child.visitCount;
         double exploration = Math.sqrt(Math.log(this.visitCount) / child.visitCount);
         double ucbValue = exploitation + params.explorationParameter * exploration;
 
@@ -179,22 +176,22 @@ public class SGTreeNode {
 
     private SGTreeNode select() {
         SGTreeNode bestChild = null;
-        double bestValue = Double.NEGATIVE_INFINITY;
+        boolean iAmMoving = state.getCurrentPlayer() == player.getPlayerID();
+        double bestValue = iAmMoving ? Double.NEGATIVE_INFINITY
+                : Double.POSITIVE_INFINITY;
 
-        for (SGTreeNode child : this.children.values()) {
+        for (SGTreeNode child : children.values()) {
             if (child == null) continue;
-
-            if (child.visitCount == 0) {
-                return child;
-            }
+            if (child.visitCount == 0) return child;
 
             double ucbValue = getUCBValue(child);
 
-            if (ucbValue > bestValue) {
+            if ((iAmMoving && ucbValue > bestValue) || (!iAmMoving && ucbValue < bestValue)) {
                 bestValue = ucbValue;
                 bestChild = child;
             }
         }
+
         return bestChild;
     }
 
@@ -235,7 +232,7 @@ public class SGTreeNode {
         // whose turn it was at this.state
         double value = params.getStateHeuristic().evaluateState(currentState, player.getPlayerID());
         if (Double.isNaN(value)) throw new AssertionError("Illegal heuristic value - should be a number");
-        return value * Math.pow(params.discountFactor, rolloutDepth) ;
+        return value * Math.pow(params.discountFactor, rolloutDepth);
     }
 
     private void backpropagate(double result) {
