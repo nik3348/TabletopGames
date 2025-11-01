@@ -1,151 +1,252 @@
 package groupAH;
 
-import core.AbstractForwardModel;
 import core.AbstractGameState;
 import core.actions.AbstractAction;
+import players.PlayerConstants;
+import utilities.ElapsedCpuTimer;
 
-import java.util.*;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
+
+import static players.PlayerConstants.*;
+import static utilities.Utils.noise;
 
 /**
  * TreeNode for Monte Carlo Tree Search (MCTS)
  */
 public class SGTreeNode {
-    protected SGPlayerParams params;
-
+    private final SGPlayer player;
+    private final SGPlayerParams params;
+    private final Random random;
     // --- Tree structure ---
-    SGTreeNode parent;
-    Map<AbstractAction, SGTreeNode> children = new HashMap<>();
+    private final SGTreeNode root;
+    private final SGTreeNode parent;
+    private final Map<AbstractAction, SGTreeNode> children = new HashMap<>();
+    // --- Statistics ---
+    private final int depth;
+    private AbstractGameState state;
+    private int fmCallsCount = 0;
+    private int visitCount = 0;
+    private double value = 0.0;
 
-    // --- Game info ---
-    final AbstractGameState state;
-    final AbstractAction actionFromParent;
-    final AbstractForwardModel forwardModel;
-    final int depth;
-
-    // --- MCTS statistics ---
-    int visitCount;
-    double totalValue;
-
-    // --- Config ---
-    static final double EXPLORATION_CONSTANT = Math.sqrt(2);
-
-    public SGTreeNode(SGTreeNode parent, AbstractGameState state, AbstractAction actionFromParent, AbstractForwardModel forwardModel) {
+    public SGTreeNode(SGPlayer player, SGTreeNode parent, AbstractGameState state) {
+        this.player = player;
         this.parent = parent;
-        this.state = state;
-        this.actionFromParent = actionFromParent;
-        this.forwardModel = forwardModel;
 
-        if (parent != null) this.depth = parent.depth + 1;
-        else this.depth = 0;
-    }
-
-    // ------------------------------
-    // 1. Selection
-    // ------------------------------
-    SGTreeNode select() {
-        SGTreeNode node = this;
-        while (!node.state.isGameOver() && node.isFullyExpanded()) {
-            node = node.children.values().stream().max(Comparator.comparingDouble(n -> n.getUCB1(EXPLORATION_CONSTANT))).orElseThrow();
+        if (parent == null) {
+            this.root = this;
+            this.depth = 0;
+        } else {
+            this.root = parent.root;
+            this.depth = parent.depth + 1;
         }
-        return node;
+
+        this.params = (SGPlayerParams) player.getParameters();
+        this.random = new Random(player.getParameters().getRandomSeed());
+        setState(state);
     }
 
-    // ------------------------------
-    // 2. Expansion
-    // ------------------------------
-    SGTreeNode expand() {
-        if (state.isGameOver()) return this;
+    private void setState(AbstractGameState newState) {
+        this.state = newState;
+        if (newState.isNotTerminal()) {
+            for (AbstractAction action : player.getForwardModel().computeAvailableActions(state, player.getParameters().actionSpace)) {
+                children.put(action, null); // mark a new node to be expanded
+            }
+        }
+    }
 
-        List<AbstractAction> possibleActions = forwardModel.computeAvailableActions(state, params.actionSpace);
-        Set<AbstractAction> triedActions = children.keySet();
+    public void mctsSearch() {
+        boolean stop = false;
+        int lastFmCallCount = -1;
+        int iters = 0;
 
-        // Find untried actions
-        List<AbstractAction> untried = new ArrayList<>();
-        for (AbstractAction a : possibleActions) {
-            if (!triedActions.contains(a)) {
-                untried.add(a);
+        // Variables for tracking time budget
+        double avgTimeTaken;
+        double acumTimeTaken = 0;
+        long remaining;
+        int remainingLimit = params.breakMS;
+        ElapsedCpuTimer elapsedTimer = new ElapsedCpuTimer();
+        PlayerConstants budgetType = params.budgetType;
+        if (budgetType == BUDGET_TIME) {
+            elapsedTimer.setMaxTimeMillis(params.budget);
+        }
+
+        while (!stop) {
+            SGTreeNode node = this;
+            ElapsedCpuTimer elapsedTimerIteration = new ElapsedCpuTimer();
+
+            // --- 1. Selection ---
+            while (node.state.isNotTerminal() && node.depth < params.maxTreeDepth) {
+                if (!node.getUntriedActions().isEmpty()) {
+                    // This node has actions we haven't expanded yet. Stop selection.
+                    break;
+                }
+                // This node is fully expanded, so select its best child and continue.
+                node = node.select();
+            }
+
+            // --- 2. Expansion ---
+            if (node.state.isNotTerminal()) {
+                node = node.expand();
+            }
+
+            // --- 3. Simulation ---
+            double result = node.simulate();
+
+            // --- 4. Backpropagation ---
+            node.backpropagate(result);
+            iters++;
+
+            // Check stopping condition
+            if (budgetType == BUDGET_TIME) {
+                // Time budget
+                acumTimeTaken += (elapsedTimerIteration.elapsedMillis());
+                avgTimeTaken = acumTimeTaken / iters;
+                remaining = elapsedTimer.remainingTimeMillis();
+                stop = remaining <= 2 * avgTimeTaken || remaining <= remainingLimit;
+            } else if (budgetType == BUDGET_ITERATIONS) {
+                // Iteration budget
+                stop = iters >= params.budget;
+            } else if (budgetType == BUDGET_FM_CALLS) {
+                // FM calls budget
+                stop = root.fmCallsCount > params.budget;
+
+                if (root.fmCallsCount == lastFmCallCount) {
+                    // The FM count did not increase. This means the
+                    // entire tree is explored. We must stop.
+                    stop = true;
+                }
+                lastFmCallCount = root.fmCallsCount; // Update for next iteration
+            }
+        }
+    }
+
+    private List<AbstractAction> getUntriedActions() {
+        return children.keySet().stream().filter(a -> children.get(a) == null).toList();
+    }
+
+    public AbstractAction getBestAction() {
+        // After all iterations, choose the move that leads
+        // to the child node with the highest visit count (most robust)
+        // or highest value (best win rate). Visit count is often more stable.
+
+        AbstractAction bestAction = null;
+        double bestValue = Double.NEGATIVE_INFINITY;
+
+        for (Map.Entry<AbstractAction, SGTreeNode> entry : children.entrySet()) {
+            SGTreeNode child = entry.getValue();
+            if (child != null) {
+                double childValue = child.value / child.visitCount;
+
+                // Apply small noise to break ties randomly
+                childValue = noise(childValue, params.epsilon, random.nextDouble());
+
+                if (childValue > bestValue) {
+                    bestValue = childValue;
+                    bestAction = entry.getKey();
+                }
             }
         }
 
-        if (untried.isEmpty()) return this; // fully expanded
+        if (bestAction == null) {
+            throw new AssertionError("Unexpected - no select made.");
+        }
 
-        // Pick a random untried action
-        AbstractAction action = untried.get(new Random().nextInt(untried.size()));
+        return bestAction;
+    }
 
-        // Generate next state
+    public SGTreeNode select() {
+        SGTreeNode bestChild = null;
+        double bestValue = Double.NEGATIVE_INFINITY;
+
+        for (SGTreeNode child : this.children.values()) {
+            if (child == null) continue;
+
+            if (child.visitCount == 0) {
+                return child;
+            }
+
+            double uctValue = getUCBValue(child);
+
+            if (uctValue > bestValue) {
+                bestValue = uctValue;
+                bestChild = child;
+            }
+        }
+        return bestChild;
+    }
+
+    private double getUCBValue(SGTreeNode child) {
+        boolean iAmMoving = child.state.getCurrentPlayer() == player.getPlayerID();
+        double perspective = iAmMoving ? 1.0 : -1.0;
+
+        double exploitation = (child.value / child.visitCount) * perspective;
+        double exploration = params.explorationParameter * Math.sqrt(Math.log(this.visitCount) / child.visitCount);
+        double uctValue = exploitation + exploration;
+
+        return noise(uctValue, params.epsilon, random.nextDouble());
+    }
+
+    public SGTreeNode expand() {
+        List<AbstractAction> untriedMoves = getUntriedActions();
+        if (untriedMoves.isEmpty()) {
+            return null; // Should not happen if not a terminal node
+        }
+
+        // Take one untried move
+        AbstractAction chosen = untriedMoves.get(random.nextInt(untriedMoves.size()));
+
+        // Create the new game state that results from this move
         AbstractGameState nextState = state.copy();
-        this.forwardModel.next(nextState, action);
+        advance(nextState, chosen.copy());
 
-        // Create child node
-        SGTreeNode child = new SGTreeNode(this, nextState, action, this.forwardModel); children.put(action, child);
-
-        return child;
+        // Create the new child node
+        SGTreeNode childNode = new SGTreeNode(player, this, nextState);
+        children.put(chosen, childNode);
+        return childNode;
     }
 
-    // ------------------------------
-    // 3. Simulation (Rollout)
-    // ------------------------------
-    double simulate() {
-        AbstractGameState simState = state.copy();
+    private void advance(AbstractGameState state, AbstractAction action) {
+        player.getForwardModel().next(state, action);
+        root.incrementFMCounter();
+    }
 
-        // Rollout until terminal state
-        while (!simState.isGameOver()) {
-            List<AbstractAction> actions = forwardModel.computeAvailableActions(simState, params.actionSpace);
-            if (actions.isEmpty()) break;
-            AbstractAction randomAction = actions.get(new Random().nextInt(actions.size()));
-            this.forwardModel.next(simState, randomAction);
+    public void incrementFMCounter() {
+        fmCallsCount++;
+    }
+
+    public double simulate() {
+        int rolloutDepth = 0;
+        AbstractGameState currentState = this.state.copy();
+
+        // Loop until the game is over
+        while (currentState.isNotTerminal() && rolloutDepth < params.rolloutLength) {
+            List<AbstractAction> possibleMoves = player.getForwardModel().computeAvailableActions(currentState, player.parameters.actionSpace);
+
+            // Choose a random move
+            AbstractAction next = possibleMoves.get(random.nextInt(possibleMoves.size()));
+            advance(currentState, next);
+            rolloutDepth++;
         }
 
-        // Return reward from perspective of root player (index 0)
-        return simState.getHeuristicScore(0);
+        // Evaluate final state and return normalised score from the perspective of the player
+        // whose turn it was at this.state
+        double value = player.getParameters().getStateHeuristic().evaluateState(currentState, player.getPlayerID());
+        if (Double.isNaN(value)) throw new AssertionError("Illegal heuristic value - should be a number");
+        return value;
     }
 
-    // ------------------------------
-    // 4. Backpropagation
-    // ------------------------------
-    void backpropagate(double reward) {
-        SGTreeNode node = this;
-        while (node != null) {
-            node.visitCount++;
-            node.totalValue += reward;
-            node = node.parent;
+    public void backpropagate(double result) {
+        SGTreeNode currentNode = this;
+        while (currentNode != null) {
+            currentNode.visitCount++;
+            // The result needs to be handled based on whose turn it was.
+            // If the parent is for the OTHER player, the result might be negated.
+            // For simplicity here, we just add the value.
+            currentNode.value += result;
+            currentNode = currentNode.parent;
         }
-    }
-
-    // ------------------------------
-    // UCB1 Formula
-    // ------------------------------
-    double getUCB1(double explorationConstant) {
-        if (visitCount == 0) return Double.POSITIVE_INFINITY;
-        double meanValue = totalValue / visitCount;
-        double explorationTerm = explorationConstant * Math.sqrt(Math.log(parent.visitCount + 1.0) / visitCount);
-        return meanValue + explorationTerm;
-    }
-
-    boolean isFullyExpanded() {
-        List<AbstractAction> possible = forwardModel.computeAvailableActions(state, params.actionSpace);
-        return possible != null && children.size() == possible.size();
-    }
-
-    // ------------------------------
-    // Helper to run one full MCTS iteration
-    // ------------------------------
-    public void runIteration() {
-        SGTreeNode selected = select();
-        SGTreeNode expanded = selected.expand();
-        double reward = expanded.simulate();
-        expanded.backpropagate(reward);
-    }
-
-    // ------------------------------
-    // Get best action after search
-    // ------------------------------
-    public AbstractAction getBestAction() {
-        return children.entrySet().stream().max(Comparator.comparingInt(e -> e.getValue().visitCount)).map(Map.Entry::getKey).orElse(null);
-    }
-
-    @Override
-    public String toString() {
-        return "TreeNode{" + "depth=" + depth + ", visits=" + visitCount + ", totalValue=" + totalValue + ", children=" + children.size() + '}';
     }
 }

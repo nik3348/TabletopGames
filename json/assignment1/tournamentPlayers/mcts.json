@@ -1,0 +1,16 @@
+{
+  "class": "players.mcts.MCTSParams",
+  "rolloutLength": 100,
+  "maxTreeDepth": 30,
+  "treePolicy": "UCB",
+  "opponentTreePolicy": "OneTree",
+  "selectionPolicy": "SIMPLE",
+  "information": "Open_Loop",
+  "rolloutType": "RANDOM",
+  "budgetType": "BUDGET_FM_CALLS",
+  "budget": 500,
+  "breakMS": 0,
+  "heuristic": {
+    "class": "players.heuristics.ScoreHeuristic"
+  }
+}
