@@ -2,8 +2,9 @@
   "class": "groupAH.SGPlayerParams",
   "rolloutLength": 100,
   "maxTreeDepth": 30,
+  "discountFactor": 1.0,
   "heuristic": {
-    "class": "players.heuristics.ScoreHeuristic"
+    "class": "groupAH.SGHeuristic"
   },
   "budgetType": "BUDGET_FM_CALLS",
   "budget": 500

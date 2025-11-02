@@ -5,10 +5,7 @@ import core.actions.AbstractAction;
 import players.PlayerConstants;
 import utilities.ElapsedCpuTimer;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Random;
+import java.util.*;
 
 import static players.PlayerConstants.*;
 import static utilities.Utils.noise;
@@ -23,10 +20,10 @@ public class SGTreeNode {
     // --- Tree structure ---
     private final SGTreeNode root;
     private final SGTreeNode parent;
+    private final AbstractGameState state;
     private final Map<AbstractAction, SGTreeNode> children = new HashMap<>();
     // --- Statistics ---
     private final int depth;
-    private AbstractGameState state;
     private int fmCallsCount = 0;
     private int visitCount = 0;
     private double value = 0.0;
@@ -45,16 +42,20 @@ public class SGTreeNode {
 
         this.params = (SGPlayerParams) player.getParameters();
         this.random = new Random(player.getParameters().getRandomSeed());
-        setState(state);
-    }
-
-    private void setState(AbstractGameState newState) {
-        this.state = newState;
-        if (newState.isNotTerminal()) {
+        this.state = state;
+        if (state.isNotTerminal()) {
             for (AbstractAction action : player.getForwardModel().computeAvailableActions(state, params.actionSpace)) {
                 children.put(action, null); // mark a new node to be expanded
             }
         }
+    }
+
+    public void incrementFMCounter() {
+        fmCallsCount++;
+    }
+
+    public void incrementVisitCounter() {
+        visitCount++;
     }
 
     private List<AbstractAction> getUntriedActions() {
@@ -66,12 +67,11 @@ public class SGTreeNode {
         root.incrementFMCounter();
     }
 
-    public void incrementFMCounter() {
-        fmCallsCount++;
-    }
-
-    public void incrementVisitCounter() {
-        visitCount++;
+    private double getUCBValue(SGTreeNode child) {
+        double exploitation = child.value / child.visitCount;
+        double exploration = Math.sqrt(Math.log(this.visitCount) / child.visitCount);
+        double ucbValue = exploitation + params.explorationParameter * exploration;
+        return noise(ucbValue, params.epsilon, random.nextDouble());
     }
 
     public void mctsSearch() {
@@ -140,14 +140,6 @@ public class SGTreeNode {
         }
     }
 
-    private double getUCBValue(SGTreeNode child) {
-        double exploitation = child.value / child.visitCount;
-        double exploration = Math.sqrt(Math.log(this.visitCount) / child.visitCount);
-        double ucbValue = exploitation + params.explorationParameter * exploration;
-
-        return noise(ucbValue, params.epsilon, random.nextDouble());
-    }
-
     public AbstractAction getBestAction() {
         AbstractAction bestAction = null;
         double bestValue = Double.NEGATIVE_INFINITY;
@@ -177,8 +169,7 @@ public class SGTreeNode {
     private SGTreeNode select() {
         SGTreeNode bestChild = null;
         boolean iAmMoving = state.getCurrentPlayer() == player.getPlayerID();
-        double bestValue = iAmMoving ? Double.NEGATIVE_INFINITY
-                : Double.POSITIVE_INFINITY;
+        double bestValue = iAmMoving ? Double.NEGATIVE_INFINITY : Double.POSITIVE_INFINITY;
 
         for (SGTreeNode child : children.values()) {
             if (child == null) continue;
@@ -239,9 +230,6 @@ public class SGTreeNode {
         SGTreeNode currentNode = this;
         while (currentNode != null) {
             currentNode.incrementVisitCounter();
-            // The result needs to be handled based on whose turn it was.
-            // If the parent is for the OTHER player, the result might be negated.
-            // For simplicity here, we just add the value.
             currentNode.value += result;
             currentNode = currentNode.parent;
         }
