@@ -5,7 +5,10 @@ import core.actions.AbstractAction;
 import players.PlayerConstants;
 import utilities.ElapsedCpuTimer;
 
-import java.util.*;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
 
 import static players.PlayerConstants.*;
 import static utilities.Utils.noise;
@@ -70,7 +73,8 @@ public class SGTreeNode {
     private double getUCBValue(SGTreeNode child) {
         double exploitation = child.value / child.visitCount;
         double exploration = Math.sqrt(Math.log(this.visitCount) / child.visitCount);
-        double ucbValue = exploitation + params.explorationParameter * exploration;
+        double progressiveBias = params.getStateHeuristic().evaluateState(state, player.getPlayerID()) / (1 + child.visitCount);
+        double ucbValue = exploitation + params.explorationParameter * exploration + progressiveBias;
         return noise(ucbValue, params.epsilon, random.nextDouble());
     }
 
@@ -212,15 +216,11 @@ public class SGTreeNode {
         // Loop until the game is over
         while (currentState.isNotTerminal() && rolloutDepth < params.rolloutLength) {
             List<AbstractAction> possibleMoves = player.getForwardModel().computeAvailableActions(currentState, player.parameters.actionSpace);
-
-            // Choose a random move
             AbstractAction next = possibleMoves.get(random.nextInt(possibleMoves.size()));
             advance(currentState, next);
             rolloutDepth++;
         }
 
-        // Evaluate final state and return normalised score from the perspective of the player
-        // whose turn it was at this.state
         double value = params.getStateHeuristic().evaluateState(currentState, player.getPlayerID());
         if (Double.isNaN(value)) throw new AssertionError("Illegal heuristic value - should be a number");
         return value * Math.pow(params.discountFactor, rolloutDepth);
