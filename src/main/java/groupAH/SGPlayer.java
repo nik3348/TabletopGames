@@ -18,7 +18,7 @@ public class SGPlayer extends AbstractPlayer {
     @Override
     public AbstractAction _getAction(AbstractGameState state, List<AbstractAction> actions) {
         ElapsedCpuTimer elapsedTimerIteration = new ElapsedCpuTimer();
-        SGTreeNode root = new SGTreeNode(this, null, state);
+        SGTreeNode root = new SGTreeNode(this, state);
         root.mctsSearch();
 
         if (elapsedTimerIteration.elapsedMillis() > params.maxDecisionTimeMs) {

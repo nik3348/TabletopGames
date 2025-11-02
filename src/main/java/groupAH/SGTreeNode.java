@@ -23,34 +23,46 @@ public class SGTreeNode {
     // --- Tree structure ---
     private final SGTreeNode root;
     private final SGTreeNode parent;
-    private final Map<AbstractAction, SGTreeNode> children = new HashMap<>();
     private final AbstractGameState state;
+    private final Map<AbstractAction, SGTreeNode> children = new HashMap<>();
     // --- Statistics ---
     private final int depth;
     private int fmCallsCount = 0;
     private int visitCount = 0;
     private double value = 0.0;
 
-    public SGTreeNode(SGPlayer player, SGTreeNode parent, AbstractGameState state) {
+    public SGTreeNode(SGPlayer player, AbstractGameState state) {
+        this.player = player;
+        this.state = state;
+        this.parent = null;
+        this.root = this;
+        this.depth = 0;
+        this.params = (SGPlayerParams) player.getParameters();
+        this.random = new Random(player.getParameters().getRandomSeed());
+
+        for (AbstractAction action : player.getForwardModel().computeAvailableActions(state, params.actionSpace)) {
+            children.put(action, null); // mark a new node to be expanded
+        }
+    }
+
+    public SGTreeNode(SGPlayer player, SGTreeNode parent, List<AbstractAction> actions) {
         this.player = player;
         this.parent = parent;
-
-        if (parent == null) {
-            this.root = this;
-            this.depth = 0;
-        } else {
-            this.root = parent.root;
-            this.depth = parent.depth + 1;
-        }
+        this.root = parent.root;
+        this.depth = parent.depth + 1;
+        this.state = null; // state is only stored at root
 
         this.params = (SGPlayerParams) player.getParameters();
         this.random = new Random(player.getParameters().getRandomSeed());
-        this.state = state;
-        if (state.isNotTerminal()) {
-            for (AbstractAction action : player.getForwardModel().computeAvailableActions(state, params.actionSpace)) {
-                children.put(action, null); // mark a new node to be expanded
-            }
+
+        for (AbstractAction action : actions) {
+            children.put(action, null); // mark a new node to be expanded
         }
+    }
+
+    public AbstractGameState getStateCopy() {
+        if (parent == null) return root.state.copy();
+        throw new IllegalStateException("Only root node stores the game state");
     }
 
     private List<AbstractAction> getUntriedActions() {
@@ -87,26 +99,27 @@ public class SGTreeNode {
         }
 
         while (!stop) {
-            SGTreeNode node = this;
             ElapsedCpuTimer elapsedTimerIteration = new ElapsedCpuTimer();
+            SGTreeNode node = this;
+            AbstractGameState simState = node.getStateCopy(); // root stores the real game state
 
             // --- 1. Selection ---
-            while (node.state.isNotTerminal() && node.depth < params.maxTreeDepth) {
+            while (node.depth < params.maxTreeDepth) {
                 if (!node.getUntriedActions().isEmpty()) {
                     // This node has actions we haven't expanded yet. Stop selection.
                     break;
                 }
                 // This node is fully expanded, so select its best child and continue.
-                node = node.select();
+                node = node.select(simState);
             }
 
             // --- 2. Expansion ---
-            if (node.state.isNotTerminal()) {
-                node = node.expand();
+            if (simState.isNotTerminal()) {
+                node = node.expand(simState);
             }
 
             // --- 3. Simulation ---
-            double result = node.simulate();
+            double result = node.simulate(simState);
 
             // --- 4. Backpropagation ---
             node.backpropagate(result);
@@ -169,9 +182,9 @@ public class SGTreeNode {
         return bestAction;
     }
 
-    private SGTreeNode select() {
+    private SGTreeNode select(AbstractGameState simState) {
         SGTreeNode bestChild = null;
-        boolean iAmMoving = state.getCurrentPlayer() == player.getPlayerID();
+        boolean iAmMoving = simState.getCurrentPlayer() == player.getPlayerID();
         double bestValue = iAmMoving ? Double.NEGATIVE_INFINITY : Double.POSITIVE_INFINITY;
 
         for (SGTreeNode child : children.values()) {
@@ -189,43 +202,28 @@ public class SGTreeNode {
         return bestChild;
     }
 
-    private SGTreeNode expand() {
-        List<AbstractAction> untriedMoves = getUntriedActions();
-        if (untriedMoves.isEmpty()) {
-            return null; // Should not happen if not a terminal node
-        }
+    private SGTreeNode expand(AbstractGameState simState) {
+        List<AbstractAction> untried = getUntriedActions();
+        AbstractAction chosen = untried.get(random.nextInt(untried.size()));
 
-        // Take one untried move
-        AbstractAction chosen = untriedMoves.get(random.nextInt(untriedMoves.size()));
+        advance(simState, chosen);
+        List<AbstractAction> actions = player.getForwardModel().computeAvailableActions(simState, params.actionSpace);
+        SGTreeNode child = new SGTreeNode(player, this, actions);
+        children.put(chosen, child);
 
-        // Create the new game state that results from this move
-        AbstractGameState nextState = state.copy();
-        advance(nextState, chosen.copy());
-
-        // Create the new child node
-        SGTreeNode childNode = new SGTreeNode(player, this, nextState);
-        children.put(chosen, childNode);
-        return childNode;
+        return child;
     }
 
-    private double simulate() {
+    private double simulate(AbstractGameState simState) {
         int rolloutDepth = 0;
-        AbstractGameState currentState = this.state.copy();
-
-        // Loop until the game is over
-        while (currentState.isNotTerminal() && rolloutDepth < params.rolloutLength) {
-            List<AbstractAction> possibleMoves = player.getForwardModel().computeAvailableActions(currentState, player.parameters.actionSpace);
-
-            // Choose a random move
-            AbstractAction next = possibleMoves.get(random.nextInt(possibleMoves.size()));
-            advance(currentState, next);
+        while (simState.isNotTerminal() && rolloutDepth < params.rolloutLength) {
+            List<AbstractAction> moves = player.getForwardModel().computeAvailableActions(simState, params.actionSpace);
+            AbstractAction move = moves.get(random.nextInt(moves.size()));
+            advance(simState, move);
             rolloutDepth++;
         }
 
-        // Evaluate final state and return normalised score from the perspective of the player
-        // whose turn it was at this.state
-        double value = params.getStateHeuristic().evaluateState(currentState, player.getPlayerID());
-        if (Double.isNaN(value)) throw new AssertionError("Illegal heuristic value - should be a number");
+        double value = params.getStateHeuristic().evaluateState(simState, player.getPlayerID());
         return value * Math.pow(params.discountFactor, rolloutDepth);
     }
 
