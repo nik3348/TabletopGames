@@ -95,21 +95,19 @@ public class SGTreeNode {
      * @return the computed GBY weight factor
      */
     private double computeWeightFactor(int simIndex, int K) {
-        double currentTotal = root.visitCount;
-
         if (simIndex < 1) simIndex = 1;
-        if (currentTotal < 1) currentTotal = 1;
 
-        // Compute ratio dynamically: how far are we in the current search?
-        double ratio = (double) simIndex / (currentTotal + 1);
+        // Exponential segment: segment grows roughly like 1,2,4,8,... simulations
+        // Compute the segment number: segment 1 for earliest sims, segment K for latest
+        // Use log2 to map simIndex to segment dynamically
+        double segment = Math.log(simIndex + 1) / Math.log(2); // log base 2
+        segment = Math.min(segment, K); // cap to max segment K
+        segment = Math.max(1, segment); // min segment 1
 
-        // Exponential partition into K segments
-        int segment = (int) Math.ceil(K * ratio);
-        segment = Math.max(1, Math.min(segment, K));
-
-        // Exponential weighting: later segments get higher weight
+        // Exponential weighting: later segments are weighted 2^(segment-1)
         return Math.pow(2, segment - 1);
     }
+
 
     public void mctsSearch() {
         boolean stop = false;
@@ -269,7 +267,7 @@ public class SGTreeNode {
         // Backpropagation
         SGTreeNode currentNode = this;
         while (currentNode != null) {
-            currentNode.visitCount += 1;
+            currentNode.visitCount += w;
             currentNode.value += result * w;
             currentNode = currentNode.parent;
         }
