@@ -8,5 +8,6 @@
     "class": "players.heuristics.ScoreHeuristic"
   },
   "budgetType": "BUDGET_TIME",
-  "budget": 100
+  "budget": 100,
+  "actionPolicy": "SIMPLE"
 }

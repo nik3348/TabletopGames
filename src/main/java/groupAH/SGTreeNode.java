@@ -68,9 +68,9 @@ public class SGTreeNode {
 
     private double getUCBValue(SGTreeNode child) {
         double exploitation = child.value / child.visitCount;
-        double exploration = Math.sqrt(Math.log(this.visitCount) / child.visitCount);
-        double progressiveBias = params.getStateHeuristic().evaluateState(state, player.getPlayerID()) / (1 + child.visitCount);
-        double ucbValue = exploitation + params.explorationParameter * exploration + progressiveBias;
+        double exploration = params.explorationParameter * Math.sqrt(Math.log(this.visitCount) / child.visitCount);
+        double progressiveBias = params.progressiveBiasWeight * params.getStateHeuristic().evaluateState(state, player.getPlayerID()) / (1 + child.visitCount);
+        double ucbValue = exploitation + exploration + progressiveBias;
         return noise(ucbValue, params.epsilon, random.nextDouble());
     }
 
