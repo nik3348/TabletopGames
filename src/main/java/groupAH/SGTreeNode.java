@@ -28,7 +28,7 @@ public class SGTreeNode {
     // --- Statistics ---
     private final int depth;
     private int fmCallsCount = 0;
-    private int visitCount = 0;
+    private double visitCount = 0;
     private double value = 0.0;
 
     public SGTreeNode(SGPlayer player, SGTreeNode parent, AbstractGameState state) {
@@ -57,10 +57,6 @@ public class SGTreeNode {
         fmCallsCount++;
     }
 
-    public void incrementVisitCounter() {
-        visitCount++;
-    }
-
     private List<AbstractAction> getUntriedActions() {
         return children.keySet().stream().filter(a -> children.get(a) == null).toList();
     }
@@ -76,6 +72,43 @@ public class SGTreeNode {
         double progressiveBias = params.getStateHeuristic().evaluateState(state, player.getPlayerID()) / (1 + child.visitCount);
         double ucbValue = exploitation + params.explorationParameter * exploration + progressiveBias;
         return noise(ucbValue, params.epsilon, random.nextDouble());
+    }
+
+    /**
+     * Computes the feedback adjustment weight factor for the GBY variant.
+     * <p>
+     * GBY stands for:
+     * G – exponential partition (segments grow exponentially),
+     * B – exponential partition boundary,
+     * Y – exponential weighting (later segments weighted more heavily).
+     * <p>
+     * This version adapts dynamically based on the current number of simulations,
+     * without requiring a predefined total simulation count.
+     * <p>
+     * Reference:
+     * [1] F. Xie and Z. Liu, “Backpropagation Modification in Monte-Carlo Game Tree Search,”
+     * in 2009 Third International Symposium on Intelligent Information Technology Application,
+     * 2009, pp. 125–128. doi: 10.1109/IITA.2009.331.
+     *
+     * @param simIndex the index (1-based) of the current simulation
+     * @param K        number of segments (commonly 5)
+     * @return the computed GBY weight factor
+     */
+    private double computeWeightFactor(int simIndex, int K) {
+        double currentTotal = root.visitCount;
+
+        if (simIndex < 1) simIndex = 1;
+        if (currentTotal < 1) currentTotal = 1;
+
+        // Compute ratio dynamically: how far are we in the current search?
+        double ratio = (double) simIndex / (currentTotal + 1);
+
+        // Exponential partition into K segments
+        int segment = (int) Math.ceil(K * ratio);
+        segment = Math.max(1, Math.min(segment, K));
+
+        // Exponential weighting: later segments get higher weight
+        return Math.pow(2, segment - 1);
     }
 
     public void mctsSearch() {
@@ -109,7 +142,7 @@ public class SGTreeNode {
             }
 
             // --- 2. Expansion ---
-            if (node.state.isNotTerminal()) {
+            if (node.state.isNotTerminal() && node.depth < params.maxTreeDepth) {
                 node = node.expand();
             }
 
@@ -117,7 +150,7 @@ public class SGTreeNode {
             double result = node.simulate();
 
             // --- 4. Backpropagation ---
-            node.backpropagate(result);
+            node.backpropagate(result, iters);
             iters++;
 
             // Check stopping condition
@@ -139,7 +172,9 @@ public class SGTreeNode {
                     // entire tree is explored. We must stop.
                     stop = true;
                 }
-                lastFmCallCount = root.fmCallsCount; // Update for next iteration
+
+                // Update for next iteration
+                lastFmCallCount = root.fmCallsCount;
             }
         }
     }
@@ -193,7 +228,8 @@ public class SGTreeNode {
     private SGTreeNode expand() {
         List<AbstractAction> untriedMoves = getUntriedActions();
         if (untriedMoves.isEmpty()) {
-            return null; // Should not happen if not a terminal node
+            // Should not happen if not a terminal node
+            return null;
         }
 
         // Take one untried move
@@ -226,11 +262,15 @@ public class SGTreeNode {
         return value * Math.pow(params.discountFactor, rolloutDepth);
     }
 
-    private void backpropagate(double result) {
+    private void backpropagate(double result, int simIndex) {
+        // Compute the weight factor
+        double w = computeWeightFactor(simIndex, params.GBY_K);
+
+        // Backpropagation
         SGTreeNode currentNode = this;
         while (currentNode != null) {
-            currentNode.incrementVisitCounter();
-            currentNode.value += result;
+            currentNode.visitCount += 1;
+            currentNode.value += result * w;
             currentNode = currentNode.parent;
         }
     }
