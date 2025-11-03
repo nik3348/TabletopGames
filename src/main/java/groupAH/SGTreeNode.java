@@ -108,7 +108,6 @@ public class SGTreeNode {
         return Math.pow(2, segment - 1);
     }
 
-
     public void mctsSearch() {
         boolean stop = false;
         int lastFmCallCount = -1;
@@ -177,6 +176,21 @@ public class SGTreeNode {
         }
     }
 
+    private double getPolicyValue(SGTreeNode child, SGEnums.Policy policy) {
+        switch (policy) {
+            case SIMPLE -> {
+                return child.visitCount;
+            }
+            case Q -> {
+                return child.value / child.visitCount;
+            }
+            case UCT -> {
+                return getUCBValue(child);
+            }
+            default -> throw new AssertionError("Unsupported action policy: " + policy);
+        }
+    }
+
     public AbstractAction getBestAction() {
         AbstractAction bestAction = null;
         double bestValue = Double.NEGATIVE_INFINITY;
@@ -184,7 +198,7 @@ public class SGTreeNode {
         for (Map.Entry<AbstractAction, SGTreeNode> entry : children.entrySet()) {
             SGTreeNode child = entry.getValue();
             if (child != null) {
-                double childValue = getUCBValue(child);
+                double childValue = getPolicyValue(child, params.actionPolicy);
 
                 // Apply small noise to break ties randomly
                 childValue = noise(childValue, params.epsilon, random.nextDouble());
@@ -212,7 +226,7 @@ public class SGTreeNode {
             if (child == null) continue;
             if (child.visitCount == 0) return child;
 
-            double ucbValue = getUCBValue(child);
+            double ucbValue = getPolicyValue(child, params.selectionPolicy);
 
             if ((iAmMoving && ucbValue > bestValue) || (!iAmMoving && ucbValue < bestValue)) {
                 bestValue = ucbValue;
@@ -262,6 +276,7 @@ public class SGTreeNode {
 
     private void backpropagate(double result, int simIndex) {
         // Compute the weight factor
+        // Set GBY K to 0 for standard backpropagation
         double w = computeWeightFactor(simIndex, params.GBY_K);
 
         // Backpropagation
