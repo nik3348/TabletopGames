@@ -5,10 +5,7 @@ import core.actions.AbstractAction;
 import players.PlayerConstants;
 import utilities.ElapsedCpuTimer;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Random;
+import java.util.*;
 
 import static players.PlayerConstants.*;
 import static utilities.Utils.noise;
@@ -30,6 +27,10 @@ public class SGTreeNode {
     private int fmCallsCount = 0;
     private double visitCount = 0;
     private double value = 0.0;
+    private final Map<AbstractAction, Double> amafVisitCount = new HashMap<>();
+    private final Map<AbstractAction, Double> amafValue = new HashMap<>();
+    private final Map<AbstractAction, Double> mastCount = new HashMap<>();
+    private final Map<AbstractAction, Double> mastValue = new HashMap<>();
 
     public SGTreeNode(SGPlayer player, SGTreeNode parent, AbstractGameState state) {
         this.player = player;
@@ -49,6 +50,8 @@ public class SGTreeNode {
         if (state.isNotTerminal()) {
             for (AbstractAction action : player.getForwardModel().computeAvailableActions(state, params.actionSpace)) {
                 children.put(action, null); // mark a new node to be expanded
+                amafVisitCount.put(action, 0.0);
+                amafValue.put(action, 0.0);
             }
         }
     }
@@ -66,13 +69,21 @@ public class SGTreeNode {
         root.incrementFMCounter();
     }
 
-    private double getUCBValue(SGTreeNode child) {
-        double exploitation = child.value / child.visitCount;
+    private double getValue(AbstractAction action, SGTreeNode child) {
+        double mcValue = child.value / child.visitCount;
+        double amafVal = 0.0;
+        double amafCount = child.parent.amafVisitCount.getOrDefault(action, 0.0);
+        if (amafCount > 0) amafVal = child.parent.amafValue.get(action) / amafCount;
+
+        double alpha = amafCount / (child.visitCount + amafCount + 1e-4);
+        double rave = (1 - alpha) * mcValue + alpha * amafVal;
+
         double exploration = Math.sqrt(Math.log(this.visitCount) / child.visitCount);
         double progressiveBias = params.getStateHeuristic().evaluateState(state, player.getPlayerID()) / (1 + child.visitCount);
-        double ucbValue = exploitation + params.explorationParameter * exploration + progressiveBias;
-        return noise(ucbValue, params.epsilon, random.nextDouble());
+
+        return noise(rave + params.explorationParameter * exploration + progressiveBias, params.epsilon, random.nextDouble());
     }
+
 
     /**
      * Computes the feedback adjustment weight factor for the GBY variant.
@@ -184,7 +195,7 @@ public class SGTreeNode {
         for (Map.Entry<AbstractAction, SGTreeNode> entry : children.entrySet()) {
             SGTreeNode child = entry.getValue();
             if (child != null) {
-                double childValue = getUCBValue(child);
+                double childValue = getValue(entry.getKey(), child);
 
                 // Apply small noise to break ties randomly
                 childValue = noise(childValue, params.epsilon, random.nextDouble());
@@ -208,11 +219,13 @@ public class SGTreeNode {
         boolean iAmMoving = state.getCurrentPlayer() == player.getPlayerID();
         double bestValue = iAmMoving ? Double.NEGATIVE_INFINITY : Double.POSITIVE_INFINITY;
 
-        for (SGTreeNode child : children.values()) {
+        for (Map.Entry<AbstractAction, SGTreeNode> entry : children.entrySet()) {
+            SGTreeNode child = entry.getValue();
+
             if (child == null) continue;
             if (child.visitCount == 0) return child;
 
-            double ucbValue = getUCBValue(child);
+            double ucbValue = getValue(entry.getKey(), child);
 
             if ((iAmMoving && ucbValue > bestValue) || (!iAmMoving && ucbValue < bestValue)) {
                 bestValue = ucbValue;
@@ -246,25 +259,62 @@ public class SGTreeNode {
     private double simulate() {
         int rolloutDepth = 0;
         AbstractGameState currentState = this.state.copy();
+        Set<AbstractAction> actionsInRollout = new HashSet<>();
 
-        // Loop until the game is over
         while (currentState.isNotTerminal() && rolloutDepth < params.rolloutLength) {
             List<AbstractAction> possibleMoves = player.getForwardModel().computeAvailableActions(currentState, player.parameters.actionSpace);
-            AbstractAction next = possibleMoves.get(random.nextInt(possibleMoves.size()));
+            AbstractAction next = getMASTAction(possibleMoves);
             advance(currentState, next);
+            actionsInRollout.add(next);
             rolloutDepth++;
         }
 
-        double value = params.getStateHeuristic().evaluateState(currentState, player.getPlayerID());
+        double value = params.getStateHeuristic().evaluateState(currentState, player.getPlayerID()) * Math.pow(params.discountFactor, rolloutDepth);
+
+        for (AbstractAction action : actionsInRollout) {
+            amafVisitCount.put(action, amafVisitCount.getOrDefault(action, 0.0) + 1);
+            amafValue.put(action, amafValue.getOrDefault(action, 0.0) + value);
+            root.mastCount.put(action, root.mastCount.getOrDefault(action, 0.0) + 1);
+            root.mastValue.put(action, root.mastValue.getOrDefault(action, 0.0) + value);
+        }
+
         if (Double.isNaN(value)) throw new AssertionError("Illegal heuristic value - should be a number");
-        return value * Math.pow(params.discountFactor, rolloutDepth);
+        return value ;
+    }
+
+    private AbstractAction getMASTAction(List<AbstractAction> possibleMoves) {
+        double tau = params.rolloutBiasTemp;  // temperature
+        double sum = 0.0;
+        Map<AbstractAction, Double> probs = new HashMap<>();
+        for (AbstractAction a : possibleMoves) {
+            double q = root.mastCount.getOrDefault(a, 0.0) > 0 ? root.mastValue.getOrDefault(a, 0.0) / root.mastCount.get(a) : 0.0;
+            double p = Math.exp(q / tau);
+            probs.put(a, p);
+            sum += p;
+        }
+
+        // Normalize
+        for (AbstractAction a : probs.keySet()) {
+            probs.put(a, probs.get(a) / sum);
+        }
+
+        // Sample
+        double r = random.nextDouble();
+        double cumulative = 0.0;
+        for (AbstractAction a : possibleMoves) {
+            cumulative += probs.get(a);
+            if (r <= cumulative) {
+                return a;
+            }
+        }
+
+        // Fallback (should not happen)
+        return possibleMoves.get(random.nextInt(possibleMoves.size()));
     }
 
     private void backpropagate(double result, int simIndex) {
-        // Compute the weight factor
         double w = computeWeightFactor(simIndex, params.GBY_K);
 
-        // Backpropagation
         SGTreeNode currentNode = this;
         while (currentNode != null) {
             currentNode.visitCount += w;
