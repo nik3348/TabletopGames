@@ -9,6 +9,9 @@ import evaluation.listeners.IGameListener;
 import evaluation.metrics.Event;
 import evaluation.summarisers.TAGNumericStatSummary;
 import games.GameType;
+import games.seasaltpaper.heuristics.LeadHeuristic;
+import games.seasaltpaper.heuristics.ScoreAndHandHeuristic;
+import games.seasaltpaper.heuristics.ScoreHeuristic;
 import games.pandemic.PandemicForwardModel;
 import gui.AbstractGUIManager;
 import gui.GUI;
@@ -17,10 +20,13 @@ import players.basicMCTS.BasicMCTSPlayer;
 import players.human.ActionController;
 import players.human.HumanConsolePlayer;
 import players.human.HumanGUIPlayer;
+import players.mcts.MCTSEnums;
 import players.mcts.MCTSParams;
 import players.mcts.MCTSPlayer;
+import players.rhea.RHEAPlayer;
 import players.rmhc.RMHCParams;
 import players.rmhc.RMHCPlayer;
+import players.simple.FirstActionPlayer;
 import players.simple.OSLAPlayer;
 import players.simple.RandomPlayer;
 import utilities.Pair;
@@ -61,6 +67,7 @@ public class Game {
     private int nActionsPerTurn, nActionsPerTurnSum, nActionsPerTurnCount;
     private boolean pause, stop;
     private boolean debug = false;
+    private boolean actionValidation = true;
     // Video recording
     private Rectangle areaBounds;
     private boolean recordingVideo = false;
@@ -295,11 +302,6 @@ public class Game {
 
                 AbstractPlayer currentPlayer = players.get(activePlayer);
 
-                // we check via a volatile boolean, otherwise GUI button presses do not trigger this
-                // as the JVM hoists pause and isHumanToMove() ouside the while loop on the basis that
-                // they cannot be changed in this thread....
-
-
                 /*
                  * The Game is responsible for tracking the players and the current game state
                  * It is important that the Game never passes the main AbstractGameState to the individual players,
@@ -430,9 +432,9 @@ public class Game {
         // Either ask player which action to use or, in case no actions are available, report the updated observation
         AbstractAction action = null;
         if (!observedActions.isEmpty()) {
-            if (observedActions.size() == 1 && (!(currentPlayer instanceof HumanGUIPlayer || currentPlayer instanceof HumanConsolePlayer) || observedActions.get(0) instanceof DoNothing)) {
+            if (observedActions.size() == 1 && !currentPlayer.considerSingletonActions) {
                 // Can only do 1 action, so do it.
-                action = observedActions.get(0);
+                action = observedActions.getFirst();
                 currentPlayer.registerUpdatedObservation(observation);
             } else {
                 // Get action from player, and time it
@@ -440,7 +442,7 @@ public class Game {
                 if (debug)
                     System.out.printf("About to get action for player %d%n", gameState.getCurrentPlayer());
                 action = currentPlayer.getAction(observation, observedActions);
-                if (!observedActions.contains(action)) {
+                if (actionValidation && !observedActions.contains(action)) {
                     throw new AssertionError("Action played that was not in the list of available actions: " + action);
                 }
 
@@ -456,7 +458,7 @@ public class Game {
             }
             // We publish an ACTION_CHOSEN message before we implement the action, so that observers can record the state that led to the decision
             AbstractAction finalAction = action;
-            listeners.forEach(l -> l.onEvent(Event.createEvent(Event.GameEvent.ACTION_CHOSEN, gameState, finalAction, activePlayer)));
+            listeners.forEach(l -> l.onEvent(Event.createEvent(Event.GameEvent.ACTION_CHOSEN, gameState, finalAction, observedActions, activePlayer)));
 
         } else {
             currentPlayer.registerUpdatedObservation(observation);
@@ -488,7 +490,7 @@ public class Game {
         // We publish an ACTION_TAKEN message once the action is taken so that observers can record the result of the action
         // (such as the next player)
         AbstractAction finalAction1 = action;
-        listeners.forEach(l -> l.onEvent(Event.createEvent(Event.GameEvent.ACTION_TAKEN, gameState, finalAction1.copy(), activePlayer)));
+        listeners.forEach(l -> l.onEvent(Event.createEvent(Event.GameEvent.ACTION_TAKEN, gameState, finalAction1.copy(), observedActions, activePlayer)));
 
         if (debug) System.out.printf("Finishing oneAction for player %s%n", activePlayer);
         return action;
@@ -669,6 +671,10 @@ public class Game {
         this.stop = stopped;
     }
 
+    public void setActionValidation(boolean actionValidation) {
+        this.actionValidation = actionValidation;
+    }
+
     public CoreParameters getCoreParameters() {
         return gameState.coreGameParameters;
     }
@@ -696,7 +702,7 @@ public class Game {
      * and then run this class.
      */
     public static void main(String[] args) {
-        String gameType = Utils.getArg(args, "game", "Chess");
+        String gameType = Utils.getArg(args, "game", "SeaSaltPaper");
         boolean useGUI = Utils.getArg(args, "gui", true);
         int turnPause = Utils.getArg(args, "turnPause", 0);
         long seed = Utils.getArg(args, "seed", System.currentTimeMillis());
@@ -704,12 +710,19 @@ public class Game {
 
         /* Set up players for the game */
         ArrayList<AbstractPlayer> players = new ArrayList<>();
+
+//        players.add(new MCTSPlayer());
+//        players.add(new HumanConsolePlayer());
+//        players.add(new HumanConsolePlayer());
+//        players.add(new RandomPlayer());
+//        players.add(new RandomPlayer());
         players.add(new RandomPlayer());
         players.add(new RandomPlayer());
-    //    players.add(new BasicMCTSPlayer());
-//        players.add(new OSLAPlayer());
-//        players.add(new RMHCPlayer());
-        // players.add(new HumanGUIPlayer(ac));
+//        players.add(new HumanGUIPlayer(ac));
+        players.add(new BasicMCTSPlayer());
+        players.add(new BasicMCTSPlayer());
+//        players.add(new BasicMCTSPlayer());
+//        players.add(new BasicMCTSPlayer());
 
 
         /* Game parameter configuration. Set to null to ignore and use default parameters */
@@ -717,6 +730,6 @@ public class Game {
 
         /* Run! */
         runOne(GameType.valueOf(gameType), gameParams, players, seed, false, null, useGUI ? ac : null, turnPause);
-    }
 
+    }
 }
