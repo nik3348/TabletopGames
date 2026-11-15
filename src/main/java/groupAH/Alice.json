@@ -1,0 +1,14 @@
+{
+  "class": "groupAH.SGPlayerParams",
+  "rolloutLength": 100,
+  "maxTreeDepth": 100,
+  "discountFactor": 1.0,
+  "GBY_K": 0,
+  "heuristic": {
+    "class": "groupAH.SGHeuristic"
+  },
+  "budgetType": "BUDGET_TIME",
+  "budget": 900,
+  "actionPolicy": "SIMPLE",
+  "progressiveBiasWeight": 0.0
+}

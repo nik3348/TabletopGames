@@ -1,0 +1,78 @@
+Game: SushiGo, Players: 2, Mode: EXHAUSTIVE, TotalGames: 500, GamesPerMatchup: 250
+Alice got 250.00 points. Alice won 49.2% of the 500 games of the tournament. Alice won 49.2% of the 500 games it played during the tournament.
+Alice got a mean score of 54.70.
+Alice won 49.2% of the 500 games against Bob.
+
+Bob got 250.00 points. Bob won 49.2% of the 500 games of the tournament. Bob won 49.2% of the 500 games it played during the tournament.
+Bob got a mean score of 54.68.
+Bob won 49.2% of the 500 games against Alice.
+
+---- Ranking ---- (+/- are standard errors on the mean calculated using a Normal approximation) 
+Alice: Win rate 0.50 +/- 0.022	Mean Ordinal 1.49 +/- 0.02
+Bob: Win rate 0.50 +/- 0.022	Mean Ordinal 1.49 +/- 0.02
+
+Game: SushiGo, Players: 2, Mode: EXHAUSTIVE, TotalGames: 500, GamesPerMatchup: 250
+Alice got 320.00 points. Alice won 63.8% of the 500 games of the tournament. Alice won 63.8% of the 500 games it played during the tournament.
+Alice got a mean score of 53.70.
+Alice won 63.8% of the 500 games against Bob.
+
+Bob got 180.00 points. Bob won 35.8% of the 500 games of the tournament. Bob won 35.8% of the 500 games it played during the tournament.
+Bob got a mean score of 48.86.
+Bob won 35.8% of the 500 games against Alice.
+
+---- Ranking ---- (+/- are standard errors on the mean calculated using a Normal approximation) 
+Alice: Win rate 0.64 +/- 0.021	Mean Ordinal 1.36 +/- 0.02
+Bob: Win rate 0.36 +/- 0.021	Mean Ordinal 1.64 +/- 0.02
+
+Game: SushiGo, Players: 2, Mode: EXHAUSTIVE, TotalGames: 500, GamesPerMatchup: 250
+Alice got 237.50 points. Alice won 47.2% of the 500 games of the tournament. Alice won 47.2% of the 500 games it played during the tournament.
+Alice got a mean score of 53.70.
+Alice won 47.2% of the 500 games against Bob.
+
+Bob got 262.50 points. Bob won 52.2% of the 500 games of the tournament. Bob won 52.2% of the 500 games it played during the tournament.
+Bob got a mean score of 54.79.
+Bob won 52.2% of the 500 games against Alice.
+
+---- Ranking ---- (+/- are standard errors on the mean calculated using a Normal approximation) 
+Bob: Win rate 0.53 +/- 0.022	Mean Ordinal 1.47 +/- 0.02
+Alice: Win rate 0.48 +/- 0.022	Mean Ordinal 1.52 +/- 0.02
+
+Game: SushiGo, Players: 2, Mode: EXHAUSTIVE, TotalGames: 500, GamesPerMatchup: 250
+Alice got 250.00 points. Alice won 49.6% of the 500 games of the tournament. Alice won 49.6% of the 500 games it played during the tournament.
+Alice got a mean score of 53.90.
+Alice won 49.6% of the 500 games against Bob.
+
+Bob got 250.00 points. Bob won 49.6% of the 500 games of the tournament. Bob won 49.6% of the 500 games it played during the tournament.
+Bob got a mean score of 54.35.
+Bob won 49.6% of the 500 games against Alice.
+
+---- Ranking ---- (+/- are standard errors on the mean calculated using a Normal approximation) 
+Alice: Win rate 0.50 +/- 0.022	Mean Ordinal 1.50 +/- 0.02
+Bob: Win rate 0.50 +/- 0.022	Mean Ordinal 1.50 +/- 0.02
+
+Game: SushiGo, Players: 2, Mode: EXHAUSTIVE, TotalGames: 50, GamesPerMatchup: 25
+Alice got 27.00 points. Alice won 54.0% of the 50 games of the tournament. Alice won 54.0% of the 50 games it played during the tournament.
+Alice got a mean score of 53.92.
+Alice won 54.0% of the 50 games against Bob.
+
+Bob got 23.00 points. Bob won 46.0% of the 50 games of the tournament. Bob won 46.0% of the 50 games it played during the tournament.
+Bob got a mean score of 51.12.
+Bob won 46.0% of the 50 games against Alice.
+
+---- Ranking ---- (+/- are standard errors on the mean calculated using a Normal approximation) 
+Alice: Win rate 0.54 +/- 0.070	Mean Ordinal 1.46 +/- 0.07
+Bob: Win rate 0.46 +/- 0.070	Mean Ordinal 1.54 +/- 0.07
+
+Game: SushiGo, Players: 2, Mode: EXHAUSTIVE, TotalGames: 50, GamesPerMatchup: 25
+Alice got 22.50 points. Alice won 44.0% of the 50 games of the tournament. Alice won 44.0% of the 50 games it played during the tournament.
+Alice got a mean score of 54.84.
+Alice won 44.0% of the 50 games against Bob.
+
+Bob got 27.50 points. Bob won 54.0% of the 50 games of the tournament. Bob won 54.0% of the 50 games it played during the tournament.
+Bob got a mean score of 56.84.
+Bob won 54.0% of the 50 games against Alice.
+
+---- Ranking ---- (+/- are standard errors on the mean calculated using a Normal approximation) 
+Bob: Win rate 0.55 +/- 0.070	Mean Ordinal 1.44 +/- 0.07
+Alice: Win rate 0.45 +/- 0.070	Mean Ordinal 1.54 +/- 0.07
+

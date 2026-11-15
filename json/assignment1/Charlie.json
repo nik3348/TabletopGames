@@ -9,5 +9,6 @@
   },
   "budgetType": "BUDGET_TIME",
   "budget": 100,
-  "actionPolicy": "SIMPLE"
+  "actionPolicy": "SIMPLE",
+  "progressiveBiasWeight": 0.0
 }

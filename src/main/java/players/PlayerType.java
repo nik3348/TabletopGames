@@ -1,6 +1,8 @@
 package players;
 
 import core.*;
+import groupAH.SGPlayer;
+import groupAH.SGPlayerParams;
 import players.human.ActionController;
 import players.human.HumanConsolePlayer;
 import players.human.HumanGUIPlayer;
@@ -34,6 +36,7 @@ public enum PlayerType {
     Random (new ArrayList<Property>() {{ add(Simple); add(Stochastic); }}),
     OSLA (new ArrayList<Property>() {{ add(Simple); add(Stochastic); add(ForwardPlanning); add(Greedy); }}),
     MCTS (new ArrayList<Property>() {{ add(Stochastic); add(ForwardPlanning); add(TreeSearch); }}),
+    SGMCTS (new ArrayList<Property>() {{add(TreeSearch); }}),
     RMHC (new ArrayList<Property>() {{ add(Stochastic); add(ForwardPlanning); add(EvolutionaryAlgorithm); }});
 
     /**
@@ -50,6 +53,8 @@ public enum PlayerType {
                 return OSLA;
             case "mcts":
                 return MCTS;
+            case "sgmcts":
+                return SGMCTS;
             case "rmhc":
                 return RMHC;
             case "console":
@@ -94,6 +99,12 @@ public enum PlayerType {
                     params = new MCTSParams();
                 }
                 player = new MCTSPlayer((MCTSParams) params);
+                break;
+            case SGMCTS:
+                if (params == null) {
+                    params = new SGPlayerParams();
+                }
+                player = new SGPlayer((SGPlayerParams) params);
                 break;
             case RMHC:
                 if (params == null) {
